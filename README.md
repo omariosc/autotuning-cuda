@@ -1,5 +1,10 @@
 # Flamingo CUDA Autotuning System 🦩
 
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/docker-supported-blue.svg)](Autotuning/Dockerfile)
+[![Documentation](https://img.shields.io/badge/docs-comprehensive-brightgreen.svg)](docs/)
+
 **Fully Modernized Python 3.10+ Version** | Version 1.0.0
 
 **Credits**: This project is built upon the exceptional foundational work of **Ben Spencer**, who created the original Python 2.5+ CUDA autotuning system. His innovative algorithms and comprehensive design form the core of this modernized version. See [Credits](docs/credits.md) for detailed acknowledgments.
