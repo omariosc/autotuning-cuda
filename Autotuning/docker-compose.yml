@@ -1,0 +1,274 @@
+# Docker Compose configuration for Flamingo CUDA Autotuning System
+# Provides complete development and deployment environment
+
+version: '3.8'
+
+services:
+  # ==============================================================================
+  # Development Environment
+  # ==============================================================================
+  flamingo-dev:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    image: flamingo:dev
+    container_name: flamingo-development
+    volumes:
+      - .:/workspace:cached
+      - flamingo-cache:/home/flamingo/.cache
+      - flamingo-local:/home/flamingo/.local
+    environment:
+      - FLAMINGO_CONFIG_DIR=/workspace/configs
+      - FLAMINGO_PLUGIN_DIR=/workspace/plugins
+      - FLAMINGO_LOG_LEVEL=DEBUG
+    stdin_open: true
+    tty: true
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    networks:
+      - flamingo-network
+    profiles:
+      - dev
+      - all
+
+  # ==============================================================================
+  # Production Runtime
+  # ==============================================================================
+  flamingo-prod:
+    build:
+      context: .
+      target: production
+      dockerfile: Dockerfile
+    image: flamingo:latest
+    container_name: flamingo-production
+    volumes:
+      - ./data:/app/data:ro
+      - ./configs:/app/configs:ro
+      - ./results:/app/results:rw
+      - ./plugins:/app/plugins:ro
+    environment:
+      - FLAMINGO_CONFIG_DIR=/app/configs
+      - FLAMINGO_PLUGIN_DIR=/app/plugins
+      - FLAMINGO_DATA_DIR=/app/data
+      - FLAMINGO_RESULTS_DIR=/app/results
+      - FLAMINGO_LOG_LEVEL=INFO
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    networks:
+      - flamingo-network
+    restart: unless-stopped
+    profiles:
+      - prod
+      - all
+
+  # ==============================================================================
+  # Jupyter Notebook Environment
+  # ==============================================================================
+  flamingo-notebook:
+    build:
+      context: .
+      target: notebook
+      dockerfile: Dockerfile
+    image: flamingo:notebook
+    container_name: flamingo-jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./examples/notebooks:/app/notebooks:rw
+      - ./data:/app/data:ro
+      - ./results:/app/results:rw
+      - jupyter-config:/home/flamingo/.jupyter
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=flamingo-notebook-token
+      - FLAMINGO_CONFIG_DIR=/app/configs
+      - FLAMINGO_DATA_DIR=/app/data
+      - FLAMINGO_RESULTS_DIR=/app/results
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    networks:
+      - flamingo-network
+    profiles:
+      - notebook
+      - all
+
+  # ==============================================================================
+  # Documentation Server
+  # ==============================================================================
+  flamingo-docs:
+    build:
+      context: .
+      target: docs
+      dockerfile: Dockerfile
+    image: flamingo:docs
+    container_name: flamingo-documentation
+    ports:
+      - "8000:8000"
+    networks:
+      - flamingo-network
+    profiles:
+      - docs
+      - all
+
+  # ==============================================================================
+  # Testing Environment
+  # ==============================================================================
+  flamingo-test:
+    build:
+      context: .
+      target: testing
+      dockerfile: Dockerfile
+    image: flamingo:test
+    container_name: flamingo-testing
+    volumes:
+      - .:/workspace:cached
+      - test-reports:/workspace/test-reports
+    environment:
+      - FLAMINGO_LOG_LEVEL=DEBUG
+      - PYTEST_CURRENT_TEST=true
+    command: ["pytest", "--cov=flamingo", "--cov-report=html:/workspace/test-reports/coverage", "-v"]
+    networks:
+      - flamingo-network
+    profiles:
+      - test
+
+  # ==============================================================================
+  # Database for Result Storage (Optional)
+  # ==============================================================================
+  flamingo-db:
+    image: postgres:15-alpine
+    container_name: flamingo-database
+    environment:
+      - POSTGRES_DB=flamingo
+      - POSTGRES_USER=flamingo
+      - POSTGRES_PASSWORD=flamingo_password
+    volumes:
+      - flamingo-db-data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - flamingo-network
+    profiles:
+      - db
+      - all
+
+  # ==============================================================================
+  # Redis for Caching and Job Queue (Optional)
+  # ==============================================================================
+  flamingo-redis:
+    image: redis:7-alpine
+    container_name: flamingo-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - flamingo-redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - flamingo-network
+    profiles:
+      - cache
+      - all
+
+  # ==============================================================================
+  # Monitoring with Prometheus (Optional)
+  # ==============================================================================
+  flamingo-prometheus:
+    image: prom/prometheus:latest
+    container_name: flamingo-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - flamingo-network
+    profiles:
+      - monitoring
+      - all
+
+  # ==============================================================================
+  # Grafana for Visualization (Optional)
+  # ==============================================================================
+  flamingo-grafana:
+    image: grafana/grafana:latest
+    container_name: flamingo-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./docker/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./docker/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=flamingo_admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    networks:
+      - flamingo-network
+    profiles:
+      - monitoring
+      - all
+
+# ==============================================================================
+# Networks
+# ==============================================================================
+networks:
+  flamingo-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ==============================================================================
+# Volumes
+# ==============================================================================
+volumes:
+  flamingo-cache:
+    driver: local
+  flamingo-local:
+    driver: local
+  flamingo-db-data:
+    driver: local
+  flamingo-redis-data:
+    driver: local
+  jupyter-config:
+    driver: local
+  test-reports:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+# ==============================================================================
+# Usage Examples:
+# 
+# Development environment:
+#   docker-compose --profile dev up -d
+#
+# Production deployment:
+#   docker-compose --profile prod up -d
+#
+# Jupyter notebook environment:
+#   docker-compose --profile notebook up -d
+#
+# Full stack with monitoring:
+#   docker-compose --profile all up -d
+#
+# Run tests:
+#   docker-compose --profile test up --abort-on-container-exit
+#
+# Build documentation:
+#   docker-compose --profile docs up -d
+# ==============================================================================
