@@ -76,7 +76,7 @@ This is a **complete modernization** of the original Python 2.5+ system with pow
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone git@github.com:omariosc/autotuning-cuda.git
 cd flamingo-autotuner/Autotuning
 
 # Install in development mode
